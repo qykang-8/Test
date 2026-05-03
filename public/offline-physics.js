@@ -38,6 +38,19 @@ export function applyPuckInertia(puck, config = {}, dt = 0) {
   puck.vy *= scale;
 }
 
+export function capPuckSpeed(puck, maxSpeed = Infinity) {
+  const limit = Number.isFinite(maxSpeed) ? Math.max(0, maxSpeed) : Infinity;
+  if (!Number.isFinite(limit)) return false;
+
+  const speed = Math.hypot(puck.vx || 0, puck.vy || 0);
+  if (speed <= limit || speed <= 0.001) return false;
+
+  const scale = limit / speed;
+  puck.vx *= scale;
+  puck.vy *= scale;
+  return true;
+}
+
 export function advanceDisplayPuck(table, config = {}, puck, dt = 0) {
   const elapsed = Math.max(0, Number(dt) || 0);
   const next = { ...puck };
@@ -263,11 +276,13 @@ export function resolveSweptPuckMalletContact(table, config, puck, mallet, index
     vy += ny * carry;
   }
 
+  const capped = capVelocity(vx, vy, config.maxPuckSpeed);
+
   return {
     x: mallet.x + nx * (minDistance + config.hardContactSeparation),
     y: mallet.y + ny * (minDistance + config.hardContactSeparation),
-    vx,
-    vy,
+    vx: capped.vx,
+    vy: capped.vy,
     hitT,
     nx,
     ny
@@ -285,7 +300,12 @@ export function resolveDirectMalletSweep(table, config, puck, sweep, index, now)
   const distance = Math.hypot(sweepX, sweepY);
   if (distance <= 0.001) return null;
 
-  const malletSpeed = distance / inputDt;
+  const rawMalletSpeed = distance / inputDt;
+  const maxSweepSpeed = Number.isFinite(config.maxSweepSpeed) ? Math.max(0, config.maxSweepSpeed) : Infinity;
+  const malletSpeed = Math.min(rawMalletSpeed, maxSweepSpeed);
+  const sweepScale = rawMalletSpeed > 0.001 ? malletSpeed / rawMalletSpeed : 1;
+  const effectiveSweepX = sweepX * sweepScale;
+  const effectiveSweepY = sweepY * sweepScale;
   const minDistance = table.malletRadius + table.puckRadius;
   const moveX = sweepX / distance;
   const moveY = sweepY / distance;
@@ -347,8 +367,8 @@ export function resolveDirectMalletSweep(table, config, puck, sweep, index, now)
   const directStrikeScale = Number.isFinite(config.directStrikeScale) ? config.directStrikeScale : 0.105;
   const sweepCarryScale = Number.isFinite(config.directSweepCarryScale) ? config.directSweepCarryScale : 8;
   const strike = Math.max(staticKick, directStrikeBase + malletSpeed * directStrikeScale);
-  let vx = exitX * strike + moveX * sweepKick + sweepX * sweepCarryScale;
-  let vy = exitY * strike + moveY * sweepKick + sweepY * sweepCarryScale;
+  let vx = exitX * strike + moveX * sweepKick + effectiveSweepX * sweepCarryScale;
+  let vy = exitY * strike + moveY * sweepKick + effectiveSweepY * sweepCarryScale;
 
   if (malletSpeed > 650) {
     const tangentX = -normalY;
@@ -363,11 +383,13 @@ export function resolveDirectMalletSweep(table, config, puck, sweep, index, now)
     vy += tangentY * tangentCarry;
   }
 
+  const capped = capVelocity(vx, vy, config.maxPuckSpeed);
+
   return {
     x: contactMalletX + exitX * (minDistance + config.hardContactSeparation),
     y: contactMalletY + exitY * (minDistance + config.hardContactSeparation),
-    vx,
-    vy,
+    vx: capped.vx,
+    vy: capped.vy,
     hitT,
     nx: normalX,
     ny: normalY,
@@ -438,6 +460,19 @@ function findEarliestSweepContact(startX, startY, deltaX, deltaY, radius, epsilo
   const deltaLength = Math.sqrt(a);
   const rewind = Math.sqrt(Math.max(0, radiusWithEpsilon * radiusWithEpsilon - closestDistanceSq)) / deltaLength;
   return clamp(tClosest - rewind, 0, 1);
+}
+
+function capVelocity(vx, vy, maxSpeed = Infinity) {
+  const limit = Number.isFinite(maxSpeed) ? Math.max(0, maxSpeed) : Infinity;
+  const speed = Math.hypot(vx || 0, vy || 0);
+  if (!Number.isFinite(limit) || speed <= limit || speed <= 0.001) {
+    return { vx, vy };
+  }
+  const scale = limit / speed;
+  return {
+    vx: vx * scale,
+    vy: vy * scale
+  };
 }
 
 function clamp(value, min, max) {

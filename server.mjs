@@ -14,6 +14,7 @@ import {
 } from "./public/protocol.js";
 import {
   applyPuckInertia,
+  capPuckSpeed,
   detectGoalCrossing,
   limitPointStep,
   resolveDirectMalletSweep,
@@ -39,7 +40,7 @@ const TABLE = {
 };
 
 const PHYSICS_HZ = readTickHz("AIR_HOCKEY_PHYSICS_HZ", 240, 60, 480);
-const SNAPSHOT_HZ = readTickHz("AIR_HOCKEY_SNAPSHOT_HZ", 240, 60, Math.min(240, PHYSICS_HZ));
+const SNAPSHOT_HZ = readTickHz("AIR_HOCKEY_SNAPSHOT_HZ", 60, 60, Math.min(120, PHYSICS_HZ));
 const DT = 1 / PHYSICS_HZ;
 const HUMAN_MALLET_BASE_SPEED = 4200;
 const HUMAN_MALLET_INPUT_SPEED_SCALE = 1.15;
@@ -47,6 +48,7 @@ const HUMAN_MALLET_SPEED_HOLD_MS = 120;
 const BOT_MIN_SPEED = 1700;
 const BOT_MAX_SPEED = 3400;
 const PUCK_REFERENCE_SPEED = 2550;
+const PUCK_MAX_SPEED = 2250;
 const PUCK_MIN_SERVE_SPEED = 520;
 const PUCK_MIN_LIVE_SPEED = 120;
 const WALL_RESTITUTION = 0.91;
@@ -72,7 +74,7 @@ const MATTER_SWEEP_SAMPLES = 12;
 const MATTER_SWEEP_BINARY_STEPS = 12;
 const PUCK_SUBSTEPS = 14;
 const IMMEDIATE_HIT_STATE_GAP_MS = 4;
-const INPUT_STATE_GAP_MS = 4;
+const INPUT_STATE_GAP_MS = 12;
 const MALLET_RELEASE_LOCK_MS = 72;
 const FRICTION_PER_SECOND = 0.985;
 const PUCK_LINEAR_FRICTION = 18;
@@ -755,6 +757,7 @@ function syncMatterPuckBody(room, puck) {
     body = room.matter.puckBodies.get(puck.id);
   }
   if (!body) return;
+  capPuckSpeed(puck, PUCK_MAX_SPEED);
   Matter.Body.setPosition(body, { x: puck.x, y: puck.y });
   Matter.Body.setVelocity(body, { x: (puck.vx || 0) / 60, y: (puck.vy || 0) / 60 });
 }
@@ -766,6 +769,7 @@ function syncPuckFromMatterBody(room, puck) {
   puck.y = body.position.y;
   puck.vx = body.velocity.x * 60;
   puck.vy = body.velocity.y * 60;
+  capPuckSpeed(puck, PUCK_MAX_SPEED);
 }
 
 function ensureMatterMalletBodies(room) {
@@ -914,10 +918,8 @@ function markMatterMalletContact(room, { malletIndex, malletBody, puck, puckBody
   );
   if (puckNormalSpeed < targetNormalSpeed) {
     const carry = targetNormalSpeed - puckNormalSpeed;
-    Matter.Body.setVelocity(puckBody, {
-      x: (puckVx + nx * carry) / 60,
-      y: (puckVy + ny * carry) / 60
-    });
+    const velocity = limitVelocity(puckVx + nx * carry, puckVy + ny * carry, PUCK_MAX_SPEED);
+    Matter.Body.setVelocity(puckBody, { x: velocity.vx / 60, y: velocity.vy / 60 });
   }
 
   puck.lastMalletHitIndex = malletIndex;
@@ -1578,8 +1580,10 @@ function directSweepConfig() {
     directContactSlop: 0.04,
     directStrikeBase: 170,
     directStrikeScale: 0.105,
-    directSweepCarryScale: 8,
+    directSweepCarryScale: 5.2,
     hardContactSeparation: HARD_CONTACT_SEPARATION,
+    maxPuckSpeed: PUCK_MAX_SPEED,
+    maxSweepSpeed: HUMAN_MALLET_BASE_SPEED,
     rehitSuppressionMs: MALLET_HIT_COOLDOWN_MS,
     restitution: MALLET_RESTITUTION,
     staticPuckSpeed: STATIC_PUCK_SPEED,
@@ -2018,6 +2022,7 @@ function collidePuckWithMallet(room, puck, mallet, malletIndex, dt) {
     puck.vy += tangentY * tangentCarry;
   }
 
+  capPuckSpeed(puck, PUCK_MAX_SPEED);
   stopVerySlowPuck(puck);
 
   if (sweptHit && hitT < 1) {
@@ -2129,6 +2134,8 @@ function collidePucks(a, b) {
   a.vy -= impulse * ny;
   b.vx += impulse * nx;
   b.vy += impulse * ny;
+  capPuckSpeed(a, PUCK_MAX_SPEED);
+  capPuckSpeed(b, PUCK_MAX_SPEED);
   stopVerySlowPuck(a);
   stopVerySlowPuck(b);
   return intensity;
@@ -3250,7 +3257,7 @@ export function runDynamicMalletMatterSelfTest() {
       body.mass >= MATTER_MALLET_MASS * 0.99 &&
       Math.abs(body.position.x - mallet.x) < 0.001 &&
       Math.abs(body.position.y - mallet.y) < 0.001;
-    const strongAuthoritativeHit = speed >= 2800;
+    const strongAuthoritativeHit = speed >= PUCK_MAX_SPEED * 0.92 && speed <= PUCK_MAX_SPEED + 0.001;
     rooms.delete(room.code);
 
     return {
@@ -3393,7 +3400,7 @@ export function runTickConfigSelfTest() {
     snapshotHz: SNAPSHOT_HZ,
     passed:
       PHYSICS_HZ === 240 &&
-      SNAPSHOT_HZ === 240
+      SNAPSHOT_HZ === 60
   };
 }
 
@@ -3697,6 +3704,17 @@ function stopVerySlowPuck(puck) {
     puck.vx = 0;
     puck.vy = 0;
   }
+}
+
+function limitVelocity(vx, vy, maxSpeed) {
+  const speed = Math.hypot(vx || 0, vy || 0);
+  const limit = Number.isFinite(maxSpeed) ? Math.max(0, maxSpeed) : Infinity;
+  if (!Number.isFinite(limit) || speed <= limit || speed <= 0.001) return { vx, vy };
+  const scale = limit / speed;
+  return {
+    vx: vx * scale,
+    vy: vy * scale
+  };
 }
 
 function clamp(value, min, max) {

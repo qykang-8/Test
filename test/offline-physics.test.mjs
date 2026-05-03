@@ -29,12 +29,14 @@ const CONFIG = {
   hardContactSeparation: 1.4,
   linearFriction: 18,
   malletTransfer: 0.56,
+  maxPuckSpeed: 2250,
+  maxSweepSpeed: 4200,
   rehitSuppressionMs: 68,
   restitution: 0.72,
   wallRestitution: 0.91,
   stopSpeed: 0
 };
-const PRE_OFFENSE_PUCK_MAX_SPEED = 2400;
+const PUCK_MAX_SPEED = 2250;
 
 function testMalletStartsNearOwnGoals() {
   const offset = TABLE.malletRadius + 34;
@@ -120,7 +122,7 @@ function testTopMalletOverlapFallbackPushesPuckDown() {
   assert.ok(distance >= target - 0.001);
 }
 
-function testStrongSweepUsesUncappedOffensiveSpeedBudget() {
+function testStrongSweepUsesCappedOffensiveSpeedBudget() {
   const puck = {
     id: "p0",
     prevX: 295,
@@ -144,7 +146,8 @@ function testStrongSweepUsesUncappedOffensiveSpeedBudget() {
 
   assert.ok(result, "strong sweep should hit the static puck");
   const speed = Math.hypot(result.vx, result.vy);
-  assert.ok(speed > PRE_OFFENSE_PUCK_MAX_SPEED, "strong sweep should exceed the previous max-speed budget");
+  assert.ok(speed > CONFIG.blockReleaseSpeed, "strong sweep should still launch the puck");
+  assert.ok(speed <= PUCK_MAX_SPEED + 0.001, "strong sweep should stay inside the puck speed budget");
 }
 
 function testDirectSweepHelperMatchesOfflineStrikeFeel() {
@@ -164,7 +167,7 @@ function testDirectSweepHelperMatchesOfflineStrikeFeel() {
       directContactSlop: 0.04,
       directStrikeBase: 170,
       directStrikeScale: 0.105,
-      directSweepCarryScale: 8,
+      directSweepCarryScale: 5.2,
       staticPuckSpeed: 70,
       staticStrikeSpeed: 500,
       staticSweepSpeed: 440,
@@ -179,7 +182,8 @@ function testDirectSweepHelperMatchesOfflineStrikeFeel() {
 
   assert.ok(result, "shared direct sweep should hit the puck");
   assert.ok(Math.hypot(result.x - 470, result.y - 512) >= TABLE.malletRadius + TABLE.puckRadius);
-  assert.ok(Math.hypot(result.vx, result.vy) > PRE_OFFENSE_PUCK_MAX_SPEED);
+  assert.ok(Math.hypot(result.vx, result.vy) <= PUCK_MAX_SPEED + 0.001);
+  assert.ok(Math.hypot(result.vx, result.vy) > 1200);
 }
 
 function testFastPuckCannotTunnelThroughStationaryMallet() {
@@ -322,7 +326,7 @@ const tests = [
   testFastMalletSweepHitsStaticPuck,
   testBottomMalletOverlapFallbackPushesPuckUp,
   testTopMalletOverlapFallbackPushesPuckDown,
-  testStrongSweepUsesUncappedOffensiveSpeedBudget,
+  testStrongSweepUsesCappedOffensiveSpeedBudget,
   testDirectSweepHelperMatchesOfflineStrikeFeel,
   testFastPuckCannotTunnelThroughStationaryMallet,
   testGoalScoredWhenPuckCrossesLineBetweenFrames,
