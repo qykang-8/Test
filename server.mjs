@@ -40,7 +40,7 @@ const TABLE = {
 };
 
 const PHYSICS_HZ = readTickHz("AIR_HOCKEY_PHYSICS_HZ", 240, 60, 480);
-const SNAPSHOT_HZ = readTickHz("AIR_HOCKEY_SNAPSHOT_HZ", 60, 60, Math.min(120, PHYSICS_HZ));
+const SNAPSHOT_HZ = readTickHz("AIR_HOCKEY_SNAPSHOT_HZ", 240, 60, Math.min(240, PHYSICS_HZ));
 const DT = 1 / PHYSICS_HZ;
 const HUMAN_MALLET_BASE_SPEED = 4200;
 const HUMAN_MALLET_INPUT_SPEED_SCALE = 1.15;
@@ -74,7 +74,7 @@ const MATTER_SWEEP_SAMPLES = 12;
 const MATTER_SWEEP_BINARY_STEPS = 12;
 const PUCK_SUBSTEPS = 14;
 const IMMEDIATE_HIT_STATE_GAP_MS = 4;
-const INPUT_STATE_GAP_MS = 12;
+const INPUT_STATE_GAP_MS = 4;
 const MALLET_RELEASE_LOCK_MS = 72;
 const FRICTION_PER_SECOND = 0.985;
 const PUCK_LINEAR_FRICTION = 18;
@@ -1580,10 +1580,9 @@ function directSweepConfig() {
     directContactSlop: 0.04,
     directStrikeBase: 170,
     directStrikeScale: 0.105,
-    directSweepCarryScale: 5.2,
+    directSweepCarryScale: 8,
     hardContactSeparation: HARD_CONTACT_SEPARATION,
     maxPuckSpeed: PUCK_MAX_SPEED,
-    maxSweepSpeed: HUMAN_MALLET_BASE_SPEED,
     rehitSuppressionMs: MALLET_HIT_COOLDOWN_MS,
     restitution: MALLET_RESTITUTION,
     staticPuckSpeed: STATIC_PUCK_SPEED,
@@ -3400,7 +3399,7 @@ export function runTickConfigSelfTest() {
     snapshotHz: SNAPSHOT_HZ,
     passed:
       PHYSICS_HZ === 240 &&
-      SNAPSHOT_HZ === 60
+      SNAPSHOT_HZ === 240
   };
 }
 

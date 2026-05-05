@@ -284,10 +284,8 @@ let canvasMetrics = null;
 let currentCursor = "";
 const pendingRealtimeInputs = new Map();
 let serverTickHz = Number(window.AIR_HOCKEY_PHYSICS_HZ) || 240;
-const REALTIME_INPUT_MAX_HZ = 90;
+const REALTIME_INPUT_MAX_HZ = 240;
 const OFFLINE_POINTER_INPUT_HZ = 60;
-const ONLINE_LOCAL_MALLET_TTL_MS = 140;
-const ONLINE_LOCAL_MALLET_MAX_LEAD = 44;
 const LOCAL_HUMAN_MALLET_BASE_SPEED = 4200;
 const LOCAL_HUMAN_MALLET_INPUT_SPEED_SCALE = 1.15;
 const LOCAL_HUMAN_MALLET_SPEED_HOLD_MS = 120;
@@ -303,7 +301,6 @@ const LOCAL_LINEAR_FRICTION = 18;
 const LOCAL_PUCK_STOP_SPEED = 0;
 const LOCAL_STRONG_SWEEP_TANGENTIAL_TRANSFER = 0.08;
 const LOCAL_STRONG_SWEEP_TANGENTIAL_MAX = 180;
-const localPredictedMallets = [null, null];
 const OFFLINE_PHYSICS_HZ = 240;
 const OFFLINE_DT = 1 / OFFLINE_PHYSICS_HZ;
 const OFFLINE_MAX_FRAME_MS = 60;
@@ -735,12 +732,6 @@ function applyRealtimeState(message) {
   previousState = serverState;
   serverState = message.state;
   lastStateReceivedAt = performance.now();
-  for (let index = 0; index < localPredictedMallets.length; index += 1) {
-    const predicted = localPredictedMallets[index];
-    if (predicted && message.ackInputSeq && predicted.inputSeq <= message.ackInputSeq) {
-      localPredictedMallets[index] = null;
-    }
-  }
   if (serverState.phase !== lastPhase) {
     lastPhase = serverState.phase;
     phaseChangedAt = performance.now();
@@ -1652,7 +1643,6 @@ function clearRoom() {
   lastStateReceivedAt = 0;
   roomPlayers = null;
   lastInputPointByPlayer.fill(null);
-  localPredictedMallets.fill(null);
   nextInputSeq = 1;
   els.roomCode.textContent = "-";
   els.roomPill.textContent = t("offline");
@@ -1749,14 +1739,6 @@ function sendPreparedRealtimePointer(prepared, targetIndex, now) {
       inputSpeed
     })
   );
-  localPredictedMallets[targetIndex] = {
-    x: constrained.x,
-    y: constrained.y,
-    vx: 0,
-    vy: 0,
-    inputSeq,
-    at: now
-  };
 }
 
 function queueRealtimePointerInput(point, targetIndex, delayMs) {
@@ -2084,8 +2066,7 @@ function directSweepConfig() {
     directContactSlop: 0.04,
     directStrikeBase: 170,
     directStrikeScale: 0.105,
-    directSweepCarryScale: 5.2,
-    maxSweepSpeed: LOCAL_HUMAN_MALLET_BASE_SPEED,
+    directSweepCarryScale: 8,
     staticPuckSpeed: 70,
     staticStrikeSpeed: 500,
     staticSweepSpeed: 440,
@@ -2175,37 +2156,7 @@ function resizeCanvas() {
 
 function renderState(frameTime = performance.now()) {
   if (!serverState) return null;
-  if (offlineGame) return serverState;
-
-  const state = {
-    ...serverState,
-    scores: Array.isArray(serverState.scores) ? [...serverState.scores] : serverState.scores,
-    mallets: (serverState.mallets || []).map((mallet) => ({ ...mallet })),
-    pucks: (serverState.pucks || []).map((puck) => ({ ...puck }))
-  };
-
-  for (let index = 0; index < localPredictedMallets.length; index += 1) {
-    const predicted = localPredictedMallets[index];
-    if (!predicted || frameTime - predicted.at > ONLINE_LOCAL_MALLET_TTL_MS || !state.mallets[index]) continue;
-    state.mallets[index] = predictedMalletDisplay(state.mallets[index], predicted);
-  }
-
-  return state;
-}
-
-function predictedMalletDisplay(authoritative, predicted) {
-  const dx = predicted.x - authoritative.x;
-  const dy = predicted.y - authoritative.y;
-  const distance = Math.hypot(dx, dy);
-  if (distance <= 0.001) return authoritative;
-
-  const maxLead = clamp(measuredRttMs * 0.45, 16, ONLINE_LOCAL_MALLET_MAX_LEAD);
-  const scale = Math.min(1, maxLead / distance);
-  return {
-    ...authoritative,
-    x: authoritative.x + dx * scale,
-    y: authoritative.y + dy * scale
-  };
+  return serverState;
 }
 
 function render(frameTime = performance.now()) {
